@@ -7,7 +7,7 @@ from PIL import Image
 import torch
 import numpy as np
 import soundfile as sf
-from moviepy.editor import VideoFileClip
+from moviepy import VideoFileClip
 
 def download_media(url: str) -> str:
     """Download media from URL to a temporary file."""
@@ -96,13 +96,13 @@ def process_mm_info(conversation: List[Dict[str, Any]], use_audio_in_video: bool
                     image_path = content.get("image")
                     if image_path:
                         img = load_image(image_path)
-                        images.append(torch.tensor(img))
+                        images.append(torch.tensor(img).cpu())
                 
                 elif content["type"] == "audio":
                     audio_path = content.get("audio")
                     if audio_path:
                         audio = load_audio(audio_path)
-                        audios.append(torch.tensor(audio))
+                        audios.append(torch.tensor(audio).cpu())
                 
                 elif content["type"] == "video":
                     video_path = content.get("video")
@@ -121,6 +121,10 @@ def process_mm_info(conversation: List[Dict[str, Any]], use_audio_in_video: bool
                                 audio = extract_audio_from_video(video_path)
                             
                             if len(audio) > 0:
-                                audios.append(torch.tensor(audio))
+                                audios.append(torch.tensor(audio).cpu())
+    
+    # Ensure all tensors are on CPU before returning
+    audios = [tensor.cpu() if tensor.device.type != 'cpu' else tensor for tensor in audios]
+    images = [tensor.cpu() if tensor.device.type != 'cpu' else tensor for tensor in images]
     
     return audios, images, videos
