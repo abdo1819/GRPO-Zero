@@ -10,11 +10,13 @@ import yaml
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 
+from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
 from minds14_task import MInDS14Dataset, reward_function
 from grpo import rollout, update_policy
 from optimizer import MemoryEfficientAdamW
-from qwen2_model import Transformer
 from tokenizer import Tokenizer
+
+Transformer = Qwen2_5OmniForConditionalGeneration.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="auto")
 
 
 def evaluate(model, tokenizer, device, dtype, config):
@@ -71,7 +73,7 @@ def main(config_path: str):
 
     current_time = datetime.now().strftime(r"%Y%m%d-%H%M%S")
     tb_writer = SummaryWriter(log_dir=f"{config['training']['log_dir']}/{current_time}")
-    tokenizer = Tokenizer(str(pretrained_model_path / "tokenizer.json"))
+    tokenizer = Tokenizer(str(pretrained_model_path))
 
     train_dataset = MInDS14Dataset(
         tokenizer=tokenizer,

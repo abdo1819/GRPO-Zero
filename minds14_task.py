@@ -6,7 +6,7 @@ import torch
 from datasets import load_dataset
 from torch.utils.data import Dataset
 
-from data_types import MiniBatch
+from data_types import Episode, MiniBatch
 from tokenizer import Tokenizer
 
 SYSTEM_MESSAGE = (
