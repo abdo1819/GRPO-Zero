@@ -58,12 +58,14 @@ def rollout(
             # Process each sequence individually
             all_logits = []
             for i in range(bsz):
-                seq_outputs = model(
-                    input_ids=tokens[i:i+1, :cur_pos],
-                    attention_mask=torch.ones_like(tokens[i:i+1, :cur_pos]),
-                    use_cache=True,
-                    return_dict=True
-                )
+                # Create input dictionary with the correct format
+                inputs = {
+                    "input_ids": tokens[i:i+1, :cur_pos],
+                    "attention_mask": torch.ones_like(tokens[i:i+1, :cur_pos]),
+                    "use_cache": True,
+                    "return_dict": True
+                }
+                seq_outputs = model(**inputs)
                 all_logits.append(seq_outputs.logits)
             # Stack the logits
             logits = torch.cat(all_logits, dim=0)
