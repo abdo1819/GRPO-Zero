@@ -51,9 +51,11 @@ def load_audio(audio_path: str, target_sr: int = 24000) -> np.ndarray:
     # Resample if needed
     if sr != target_sr:
         # For simplicity, we'll just use scipy resample in a real project
-        # But this is a placeholder - you would implement proper resampling here
         from scipy import signal
         audio = signal.resample(audio, int(len(audio) * target_sr / sr))
+    
+    # Reshape to match expected dimensions (add channel dimension)
+    audio = audio.reshape(1, -1)
     
     return audio
 
