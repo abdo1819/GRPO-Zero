@@ -102,10 +102,11 @@ class MInDS14Dataset(Dataset):
             RESPONSE_PROMPT,
         )
         tokens = self.tokenizer.tokenize(prefix)
+        input_ids = tokens["input_ids"][0].tolist()  # Convert tensor to list
         return {
             "prefix": prefix,
-            "prefix_tokens": tokens.tokens,
-            "prefix_token_ids": tokens.ids,
+            "prefix_tokens": input_ids,  # Use input_ids as tokens
+            "prefix_token_ids": input_ids,
             "transcription": transcription,
         }
 
@@ -123,4 +124,4 @@ class MInDS14Dataset(Dataset):
             prefix=prefix,
             prefix_tokens=prefix_tokens,
             prefix_token_ids=prefix_token_ids,
-        ) 
+        )

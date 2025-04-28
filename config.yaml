@@ -1,5 +1,5 @@
 model:
-  pretrained_model_path: "Qwen2.5-3B-Instruct"
+  pretrained_model_path: "Qwen/Qwen2.5-Omni-7B"
   device: "cuda"
   dtype: "bfloat16"
 data:

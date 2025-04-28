@@ -34,12 +34,7 @@ def rollout(
     min_prompt_len = min(len(t) for t in prefix_token_ids)
     max_prompt_len = max(len(t) for t in prefix_token_ids)
     total_len = max_gen_len + max_prompt_len
-    model.init_kv_cache(
-        max_batch_size=bsz,
-        max_seq_len=total_len,
-        device=device,
-        dtype=dtype,
-    )
+    # model.init_kv_cache is not available for Qwen2_5OmniForConditionalGeneration
     tokens = torch.full((bsz, total_len), pad_token_id, dtype=torch.long, device=device)
     for k, t in enumerate(prefix_token_ids):
         offset = k * num_answer_per_question
@@ -60,7 +55,7 @@ def rollout(
             end="",
         )
         with torch.autocast(device_type=device.type, dtype=dtype):
-            logits = model.inference(tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = model(tokens[:, :cur_pos]).logits
         probs = torch.softmax(logits[:, -1], dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
         next_token = next_token.reshape(-1)
