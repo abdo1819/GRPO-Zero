@@ -55,7 +55,8 @@ def rollout(
             end="",
         )
         with torch.autocast(device_type=device.type, dtype=dtype):
-            logits = model(tokens[:, :cur_pos]).logits
+            outputs = model(input_ids=tokens[:, :cur_pos], use_cache=True)
+            logits = outputs.logits
         probs = torch.softmax(logits[:, -1], dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
         next_token = next_token.reshape(-1)

@@ -15,9 +15,6 @@ from minds14_task import MInDS14Dataset, reward_function
 from grpo import rollout, update_policy
 from optimizer import MemoryEfficientAdamW
 from tokenizer import Tokenizer
-from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
-
-Transformer = Qwen2_5OmniForConditionalGeneration.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="auto")
 
 def evaluate(model, tokenizer, device, dtype, config):
     test_dataset = MInDS14Dataset(
@@ -75,6 +72,13 @@ def main(config_path: str):
     tb_writer = SummaryWriter(log_dir=f"{config['training']['log_dir']}/{current_time}")
     tokenizer = Tokenizer(str(pretrained_model_path))
 
+    # Load model only once
+    model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
+        pretrained_model_path,
+        torch_dtype=dtype,
+        device_map="auto"
+    ).to(device).train()
+
     train_dataset = MInDS14Dataset(
         tokenizer=tokenizer,
         language=config["data"]["language"],
@@ -89,8 +93,6 @@ def main(config_path: str):
         generator=generator,
         batch_size=NUM_QUESTIONS_PER_BATCH,
     )
-
-    model = Transformer.from_pretrained(pretrained_model_path).to(device).train()
 
     optimizer = MemoryEfficientAdamW(
         model.parameters(),
