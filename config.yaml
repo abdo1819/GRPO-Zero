@@ -3,7 +3,7 @@ model:
   device: "cuda"
   dtype: "bfloat16"
 data:
-  path: "Countdown-Tasks-3to4"
+  language: "en-US"  # Language code for MInDS-14 dataset
   test_size: 128
 training:
   random_seed: 1337

@@ -6,10 +6,13 @@ from typing import Callable, List
 
 import numpy as np
 import torch
+from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
 
 from data_types import Episode, MiniBatch
-from qwen2_model import Transformer
 from tokenizer import Tokenizer
+
+
+Transformer = Qwen2_5OmniForConditionalGeneration.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="auto")
 
 
 @torch.no_grad()

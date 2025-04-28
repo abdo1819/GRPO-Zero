@@ -23,5 +23,5 @@ class MiniBatch:
     prefix: List[str]
     prefix_tokens: List[List[str]]
     prefix_token_ids: List[List[int]]
-    numbers: List[List[int]]
-    target: List[int]
+    audio_paths: List[str]
+    transcriptions: List[str]
