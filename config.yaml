@@ -1,28 +1,25 @@
 model:
   pretrained_model_path: "Qwen/Qwen2.5-Omni-7B"
   device: "cuda"
-  dtype: "bfloat16"  # Can be bfloat16, float16, or float32
-
+  dtype: "bfloat16"
 data:
-  language: "en-US"  # MInDS-14 language code
-  test_size: 100
-
+  language: "en-US"  # Language code for MInDS-14 dataset
+  test_size: 128
 training:
-  random_seed: 42
-  learning_rate: 1.0e-6
-  weight_decay: 0.0
-  betas: [0.9, 0.95]
-  memory_efficient_adamw: true
-  batch_size: 16  # Total batch size
-  num_questions_per_batch: 4  # Each question will get batch_size/num_questions_per_batch answers
-  micro_batch_size: 4  # For gradient accumulation
-  max_gen_len: 256  # Maximum generation length
+  random_seed: 1337
+  max_prompt_len: 256
+  max_gen_len: 1024
+  batch_size: 256
+  num_questions_per_batch: 32
+  # Number of examples per gradient accumulation step
+  micro_batch_size: 2
   max_grad_norm: 1.0
+  learning_rate: 1.0e-5
+  weight_decay: 0.0
+  betas: [0.9, 0.999]
+  ckpt_dir: "ckpt"
+  log_dir: "logs"
   skip_unfinished_episodes: false
-  batch_rollout_size: 4  # Number of examples to process in a single batch
-  
-  # Training logistics
-  log_dir: "runs"
-  ckpt_dir: "checkpoints"
-  ckpt_save_interval: 10
+  ckpt_save_interval: 100
   eval_interval: 10
+  memory_efficient_adamw: false

@@ -80,17 +80,21 @@ def rollout(
             
             # Generate completion with audio support
             with torch.autocast(device_type=device.type, dtype=dtype):
-                output_ids, audio_output = model.generate(
+                outputs = model.generate(
                     **inputs,
                     max_new_tokens=max_gen_len,
                     do_sample=True,
                     use_audio_in_video=batch.use_audio_in_video,
-                    return_dict_in_generate=False,
+                    return_dict_in_generate=True,
                 )
+            
+            # Extract text and audio from outputs
+            text_ids = outputs.sequences
+            audio = outputs.audio_output
             
             # Decode the generated IDs
             generated_text = tokenizer.processor.batch_decode(
-                output_ids, 
+                text_ids, 
                 skip_special_tokens=True,
                 clean_up_tokenization_spaces=False
             )[0]
