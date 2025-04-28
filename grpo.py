@@ -55,14 +55,16 @@ def rollout(
             end="",
         )
         with torch.autocast(device_type=device.type, dtype=dtype):
-            outputs = model.generate(
-                input_ids=tokens[:, :cur_pos],
-                max_new_tokens=1,
-                do_sample=True,
-                return_dict_in_generate=True,
-                output_scores=True
-            )
-            logits = outputs.scores[0]
+            # Process each sequence individually
+            all_logits = []
+            for i in range(bsz):
+                seq_outputs = model(
+                    input_ids=tokens[i:i+1, :cur_pos],
+                    use_cache=True
+                )
+                all_logits.append(seq_outputs.logits)
+            # Stack the logits
+            logits = torch.cat(all_logits, dim=0)
         probs = torch.softmax(logits[:, -1], dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
         next_token = next_token.reshape(-1)

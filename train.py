@@ -77,7 +77,7 @@ def main(config_path: str):
         pretrained_model_path,
         torch_dtype=dtype,
         device_map="auto"
-    ).to(device).train()
+    ).train()
 
     train_dataset = MInDS14Dataset(
         tokenizer=tokenizer,
