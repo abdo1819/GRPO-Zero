@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -25,3 +25,7 @@ class MiniBatch:
     prefix_token_ids: List[List[int]]
     audio_paths: List[str]
     transcriptions: List[str]
+    # New fields for multimodal support
+    images: Optional[List[str]] = None
+    videos: Optional[List[str]] = None
+    use_audio_in_video: bool = False

@@ -13,6 +13,16 @@ dependencies = [
     "tensorboard>=2.19.0",
     "tokenizers>=0.21.1",
     "torch>=2.6.0",
+    "datasets",
+    "transformers>=4.50.0-dev",
+    "accelerate>=0.25.0",
+    "sympy",
+    # Dependencies for multimedia processing
+    "moviepy",
+    "scipy",
+    "soundfile",
+    "requests",
+    "Pillow",
 ]
 
 [dependency-groups]

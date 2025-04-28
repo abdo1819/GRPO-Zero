@@ -63,7 +63,7 @@ The reward is the sum of two components:
 
 ## Training
 
-We use the `Qwen2.5-3B-Instruct` model for training. To train the model, run the following commands:
+We use the `Qwen/Qwen2.5-Omni-7B` model for training. To train the model, run the following commands:
 
 ```bash
 # initialize the environment
@@ -77,7 +77,7 @@ apt update; apt install git-lfs -y; git lfs install
 git clone https://huggingface.co/datasets/Jiayi-Pan/Countdown-Tasks-3to4
 
 # download the pretrained model
-git clone https://huggingface.co/Qwen/Qwen2.5-3B-Instruct
+git clone https://huggingface.co/Qwen/Qwen2.5-Omni-7B
 # train the model
 uv run train.py
 # train the model with a 24GB VRAM GPU (e.g., an RTX 4090 GPU)
@@ -91,4 +91,4 @@ This project builds upon the work of several outstanding projects:
 - [DAPO](https://arxiv.org/abs/2503.14476) for their enhancements to the original GRPO algorithm.
 - [TinyZero](https://github.com/Jiayi-Pan/TinyZero) for their implementation of GRPO and creation of the [CountDown-Tasks-3to4](https://huggingface.co/datasets/Jiayi-Pan/Countdown-Tasks-3to4) dataset.
 - [nano-aha-moment](https://github.com/McGill-NLP/nano-aha-moment/tree/main) for their clear implementation and tutorial on the GRPO algorithm.
-- [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-3B-Instruct) for developing the high-quality pretrained model used in this project.
+- [Qwen2.5](https://huggingface.co/Qwen/Qwen2.5-Omni-7B) for developing the high-quality pretrained model used in this project.

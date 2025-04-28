@@ -2,22 +2,21 @@ import dataclasses
 import gc
 import math
 from collections import defaultdict
-from typing import Callable, List
+from typing import Callable, List, Dict, Any, Optional
 
 import numpy as np
 import torch
+import soundfile as sf
 from transformers import Qwen2_5OmniForConditionalGeneration, Qwen2_5OmniProcessor
 
 from data_types import Episode, MiniBatch
 from tokenizer import Tokenizer
-
-
-Transformer = Qwen2_5OmniForConditionalGeneration.from_pretrained("Qwen/Qwen2.5-Omni-7B", torch_dtype="auto", device_map="auto")
+from qwen_omni_utils import process_mm_info
 
 
 @torch.no_grad()
 def rollout(
-    model: Transformer,
+    model: Qwen2_5OmniForConditionalGeneration,
     batch: MiniBatch,
     tokenizer: Tokenizer,
     max_gen_len: int,
@@ -26,101 +25,133 @@ def rollout(
     device: torch.device,
     dtype: torch.dtype,
 ) -> List[Episode]:
+    """Generate responses using the Qwen2.5-Omni model for audio inputs."""
     end_token = tokenizer.eos_token
     end_token_id = tokenizer.eos_token_id
     pad_token_id = tokenizer.pad_token_id
-    prefix_token_ids = batch.prefix_token_ids
-    bsz = len(batch.prefix) * num_answer_per_question
-    min_prompt_len = min(len(t) for t in prefix_token_ids)
-    max_prompt_len = max(len(t) for t in prefix_token_ids)
-    total_len = max_gen_len + max_prompt_len
-    # model.init_kv_cache is not available for Qwen2_5OmniForConditionalGeneration
-    tokens = torch.full((bsz, total_len), pad_token_id, dtype=torch.long, device=device)
-    for k, t in enumerate(prefix_token_ids):
-        offset = k * num_answer_per_question
-        for i in range(num_answer_per_question):
-            tokens[offset + i, : len(t)] = torch.tensor(
-                t, dtype=torch.long, device=device
-            )
-
-    prev_pos = 0
-    input_text_mask = tokens != pad_token_id
-    assert min_prompt_len < total_len
-    is_finished = torch.zeros((bsz,), dtype=torch.bool, device=device)
-
-    for cur_pos in range(min_prompt_len, total_len):
-        print(
-            f"\r* Generating trajectories: {cur_pos-min_prompt_len:>4d}/{total_len-min_prompt_len:>4d}",
-            flush=True,
-            end="",
-        )
-        with torch.autocast(device_type=device.type, dtype=dtype):
-            # Process each sequence individually
-            all_logits = []
-            for i in range(bsz):
-                # Create input dictionary with the correct format
-                inputs = {
-                    "input_ids": tokens[i:i+1, :cur_pos],
-                    "attention_mask": torch.ones_like(tokens[i:i+1, :cur_pos]),
-                    "use_cache": True,
-                    "return_dict": True
-                }
-                seq_outputs = model(**inputs)
-                all_logits.append(seq_outputs.logits)
-            # Stack the logits
-            logits = torch.cat(all_logits, dim=0)
-        probs = torch.softmax(logits[:, -1], dim=-1)
-        next_token = torch.multinomial(probs, num_samples=1)
-        next_token = next_token.reshape(-1)
-        next_token = torch.where(
-            input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
-        )
-        # if an rollout is finished, we fill the rest of the tokens with pad_token_id
-        next_token = torch.where(is_finished, pad_token_id, next_token)
-        tokens[:, cur_pos] = next_token
-        if end_token_id is not None:
-            is_end_token = next_token == end_token_id
-            is_generated_token = ~input_text_mask[:, cur_pos]
-            is_finished = is_finished | (is_end_token & is_generated_token)
-        prev_pos = cur_pos
-        if is_finished.all():
-            break
-    model.del_kv_cache()
-    gc.collect()
-    torch.cuda.empty_cache()
-    is_finished_list = is_finished.tolist()
-    tokens_list = tokens.tolist()
-
-    # prepare the output episodes
+    
+    # Prepare batches - we'll process each example separately for clarity
     episodes = []
-    for i in range(bsz // num_answer_per_question):
+    
+    for i, prefix in enumerate(batch.prefix):
+        # Create conversation format for each example
+        conversation = [
+            {"role": "system", "content": [
+                {"type": "text", "text": "You are a speech recognition system. Your task is to transcribe the given audio into text."}
+            ]},
+            {"role": "user", "content": [
+                {"type": "text", "text": "Please transcribe the following audio into text. Return the transcription in <answer> </answer> tags."},
+                {"type": "audio", "audio": batch.audio_paths[i]}
+            ]},
+        ]
+        
+        # Process each example num_answer_per_question times
         for j in range(num_answer_per_question):
-            idx = i * num_answer_per_question + j
-            generated_token_ids = tokens_list[idx][len(batch.prefix_token_ids[i]) :]
-            # remove padding tokens
-            if pad_token_id in generated_token_ids:
-                generated_token_ids = generated_token_ids[
-                    : generated_token_ids.index(pad_token_id)
-                ]
-            generated_text = tokenizer.detokenize(generated_token_ids)
+            print(f"\r* Generating trajectory: {i*num_answer_per_question+j+1}/{len(batch.prefix)*num_answer_per_question}", 
+                  flush=True, end="")
+            
+            # Convert conversation to model inputs
+            text = tokenizer.processor.apply_chat_template(
+                conversation, 
+                add_generation_prompt=True, 
+                tokenize=False
+            )
+            
+            # Process multimedia inputs
+            audios, images, videos = process_mm_info(
+                conversation, 
+                use_audio_in_video=batch.use_audio_in_video
+            )
+            
+            # Create model inputs
+            inputs = tokenizer.processor(
+                text=text,
+                audio=audios,
+                images=images,
+                videos=videos,
+                return_tensors="pt",
+                padding=True,
+                use_audio_in_video=batch.use_audio_in_video
+            )
+            
+            # Move inputs to the correct device
+            inputs = {k: v.to(device).to(dtype) if isinstance(v, torch.Tensor) else v 
+                     for k, v in inputs.items()}
+            
+            # Generate completion with audio support
+            with torch.autocast(device_type=device.type, dtype=dtype):
+                output_ids, audio_output = model.generate(
+                    **inputs,
+                    max_new_tokens=max_gen_len,
+                    do_sample=True,
+                    use_audio_in_video=batch.use_audio_in_video,
+                    return_dict_in_generate=False,
+                )
+            
+            # Decode the generated IDs
+            generated_text = tokenizer.processor.batch_decode(
+                output_ids, 
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False
+            )[0]
+            
+            # Subtract the prompt to get only the generated part
+            prefix_text = tokenizer.processor.batch_decode(
+                inputs["input_ids"], 
+                skip_special_tokens=True,
+                clean_up_tokenization_spaces=False
+            )[0]
+            
+            # Get only the generated part
+            if generated_text.startswith(prefix_text):
+                generated_text = generated_text[len(prefix_text):]
+            
+            # Get the generated token IDs
+            prefix_token_ids = batch.prefix_token_ids[i]
+            # For simplicity, we'll just use tokenizer to tokenize the generated part
+            generated_token_ids = tokenizer.tokenizer.encode(
+                generated_text, 
+                add_special_tokens=False
+            )
+            
+            # Check if the generation is complete (has the EOS token)
+            is_finished = end_token_id in generated_token_ids
+            if is_finished:
+                # Truncate at EOS token
+                end_pos = generated_token_ids.index(end_token_id) + 1
+                generated_token_ids = generated_token_ids[:end_pos]
+                generated_text = tokenizer.tokenizer.decode(
+                    generated_token_ids, 
+                    skip_special_tokens=True
+                )
+            
+            # Calculate reward
             rewards = reward_function(
-                response=generated_text,
-                numbers=batch.numbers[i],
-                target=batch.target[i],
+                response=prefix + generated_text,
+                numbers=[],  # Not used for ASR
+                target=batch.transcriptions[i],
                 end_token=end_token,
             )
+            
+            # Create episode
             episode = Episode(
-                prefix=batch.prefix[i],
-                text=batch.prefix[i] + generated_text,
-                prefix_token_ids=batch.prefix_token_ids[i],
-                prefix_tokens=batch.prefix_tokens[i],
+                prefix=prefix,
+                text=prefix + generated_text,
+                prefix_token_ids=prefix_token_ids,
+                prefix_tokens=[tokenizer.tokenizer.decode([tid]) for tid in prefix_token_ids],
                 generated_token_ids=generated_token_ids,
-                is_finished=is_finished_list[idx],
+                is_finished=is_finished,
                 reward=rewards["reward"],
                 reward_info=rewards["reward_info"],
             )
+            
             episodes.append(episode)
-    # clear the output line
+    
+    # Clean up
+    gc.collect()
+    torch.cuda.empty_cache()
+    
+    # Clear the output line
     print("\r", end=" " * 100, flush=True)
     return episodes
 
@@ -202,7 +233,15 @@ def update_policy(
             input_token_ids = batch_token_ids[:, :-1]
             target_token_ids = batch_token_ids[:, 1:]
             target_masks = batch_masks[:, 1:]
-            logits = model.forward(input_token_ids).float()
+            
+            # Create inputs dict for Qwen2.5-Omni
+            model_inputs = {
+                "input_ids": input_token_ids,
+                "attention_mask": torch.ones_like(input_token_ids),
+            }
+            
+            outputs = model(**model_inputs)
+            logits = outputs.logits.float()
 
         log_probs = -torch.nn.functional.cross_entropy(
             logits.reshape(-1, logits.size(-1)),

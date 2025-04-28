@@ -21,7 +21,12 @@ USER_TEMPLATE = (
 RESPONSE_PROMPT = "Let me transcribe this audio.\n<think>"
 
 
-def reward_function(episode: Episode, target_transcription: str) -> Dict[str, float]:
+def reward_function(
+    response: str,
+    numbers: List[int],
+    target: str,
+    end_token: str,
+) -> Dict[str, Dict[str, float]]:
     """
     Compute reward for ASR task.
     The reward consists of two components:
@@ -29,9 +34,15 @@ def reward_function(episode: Episode, target_transcription: str) -> Dict[str, fl
     2. Transcription reward (1.0): Word Error Rate (WER) based reward
     """
     # Extract the transcription from the model's response
-    answer_match = re.search(r"<answer>(.*?)</answer>", episode.text, re.DOTALL)
+    answer_match = re.search(r"<answer>(.*?)</answer>", response, re.DOTALL)
     if not answer_match:
-        return {"format_reward": 0.0, "transcription_reward": 0.0, "answer_reward": 0.0}
+        return {
+            "reward": 0.0,
+            "reward_info": {
+                "format_reward": 0.0, 
+                "answer_reward": 0.0
+            }
+        }
     
     predicted_transcription = answer_match.group(1).strip()
     
@@ -41,15 +52,17 @@ def reward_function(episode: Episode, target_transcription: str) -> Dict[str, fl
     # Compute Word Error Rate (WER) based reward
     # For simplicity, we'll use exact match for now
     # In practice, you'd want to use a proper WER calculation
-    transcription_reward = 1.0 if predicted_transcription.lower() == target_transcription.lower() else 0.0
+    transcription_reward = 1.0 if predicted_transcription.lower() == target.lower() else 0.0
     
     # Total reward
     answer_reward = format_reward + transcription_reward
     
     return {
-        "format_reward": format_reward,
-        "transcription_reward": transcription_reward,
-        "answer_reward": answer_reward,
+        "reward": answer_reward,
+        "reward_info": {
+            "format_reward": format_reward,
+            "answer_reward": answer_reward
+        }
     }
 
 
@@ -93,7 +106,17 @@ class MInDS14Dataset(Dataset):
 
     def encode_prefix(self, audio_path: str, transcription: str):
         """Prefix is the *actual* input to the model."""
-        user_message = USER_TEMPLATE.format(audio_path=audio_path)
+        user_message = USER_TEMPLATE
+        
+        conversation = [
+            {"role": "system", "content": [{"type": "text", "text": SYSTEM_MESSAGE}]},
+            {"role": "user", "content": [
+                {"type": "text", "text": user_message},
+                {"type": "audio", "audio": audio_path}
+            ]},
+        ]
+        
+        # For compatibility with old code, also create text-only prefix
         prefix = self.tokenizer.encode_chat_with_response_prompt(
             [
                 {"role": "system", "content": SYSTEM_MESSAGE},
@@ -103,25 +126,32 @@ class MInDS14Dataset(Dataset):
         )
         tokens = self.tokenizer.tokenize(prefix)
         input_ids = tokens["input_ids"][0].tolist()  # Convert tensor to list
+        
         return {
             "prefix": prefix,
             "prefix_tokens": input_ids,  # Use input_ids as tokens
             "prefix_token_ids": input_ids,
             "transcription": transcription,
+            "conversation": conversation,
+            "audio_path": audio_path,
         }
 
     @staticmethod
     def collate_fn(batch: List[Dict[str, Any]]) -> MiniBatch:
         """Collate examples into a batch."""
-        audio_paths = [item["path"] for item in batch]
+        audio_paths = [item["audio_path"] for item in batch]
         transcriptions = [item["transcription"] for item in batch]
         prefix = [item["prefix"] for item in batch]
         prefix_tokens = [item["prefix_tokens"] for item in batch]
         prefix_token_ids = [item["prefix_token_ids"] for item in batch]
+        
         return MiniBatch(
             audio_paths=audio_paths,
             transcriptions=transcriptions,
             prefix=prefix,
             prefix_tokens=prefix_tokens,
             prefix_token_ids=prefix_token_ids,
+            images=[],
+            videos=[],
+            use_audio_in_video=False,
         )
