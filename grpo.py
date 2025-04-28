@@ -60,7 +60,9 @@ def rollout(
             for i in range(bsz):
                 seq_outputs = model(
                     input_ids=tokens[i:i+1, :cur_pos],
-                    use_cache=True
+                    attention_mask=torch.ones_like(tokens[i:i+1, :cur_pos]),
+                    use_cache=True,
+                    return_dict=True
                 )
                 all_logits.append(seq_outputs.logits)
             # Stack the logits
