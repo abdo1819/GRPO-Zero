@@ -83,7 +83,7 @@ def rollout(
                 outputs = model.generate(
                     **inputs,
                     max_new_tokens=max_gen_len,
-                    do_sample=True,
+                    do_sample=False,
                     use_audio_in_video=batch.use_audio_in_video,
                     return_dict_in_generate=True,
                 )

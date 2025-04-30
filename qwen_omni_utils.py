@@ -1,135 +1,98 @@
 import os
-import base64
 import tempfile
-from typing import List, Dict, Tuple, Optional, Any, Union
-import requests
-from PIL import Image
-import torch
+from typing import List, Dict, Tuple, Any
+
 import numpy as np
+import requests
 import soundfile as sf
+from PIL import Image
 from moviepy import VideoFileClip
 
+# ---------------------------------------------------------------------------
+# Public helpers (load_image, load_audio, extract_audio_from_video)
+# These follow exactly the I/O conventions expected by Qwen2.5‑OmniProcessor
+# – NumPy arrays for image & audio, string paths for video.
+# ---------------------------------------------------------------------------
+TARGET_SR = 24_000  # sample rate used in the official Qwen notebook
+
+
 def download_media(url: str) -> str:
-    """Download media from URL to a temporary file."""
+    """Download any http/https asset to a temp file and return its local path."""
     response = requests.get(url, stream=True)
     response.raise_for_status()
-    
-    # Create a temporary file with the appropriate extension
-    suffix = os.path.splitext(url)[1]
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
-        for chunk in response.iter_content(chunk_size=8192):
-            temp_file.write(chunk)
-    
-    return temp_file.name
+    suffix = os.path.splitext(url)[1] or ".bin"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as fp:
+        for chunk in response.iter_content(8192):
+            fp.write(chunk)
+    return fp.name
 
-def load_image(image_path_or_url: str) -> np.ndarray:
-    """Load image from path or URL."""
-    if image_path_or_url.startswith(('http://', 'https://')):
-        image_path = download_media(image_path_or_url)
+
+# ----------------------- IMAGE --------------------------------------------
+
+def load_image(path_or_url: str) -> np.ndarray:
+    if path_or_url.startswith(("http://", "https://")):
+        path = download_media(path_or_url)
     else:
-        image_path = image_path_or_url
-    
-    image = Image.open(image_path).convert('RGB')
-    return np.array(image)
+        path = path_or_url
+    img = Image.open(path).convert("RGB")
+    return np.asarray(img)
 
-def load_audio(audio_path: str, target_sr: int = 24000) -> np.ndarray:
-    """Load audio from path with resampling if needed."""
-    audio, sr = sf.read(audio_path)
-    
-    # Convert to mono if stereo
-    if len(audio.shape) > 1 and audio.shape[1] > 1:
+
+# ----------------------- AUDIO --------------------------------------------
+
+def load_audio(path: str, target_sr: int = TARGET_SR) -> np.ndarray:
+    """Return mono 1‑D float32 NumPy array normalised to ‑1…1."""
+    audio, sr = sf.read(path)
+    if audio.ndim > 1:
         audio = audio.mean(axis=1)
-    
-    # Ensure audio is 1D
-    audio = audio.reshape(-1)
-    
-    # Normalize audio
     audio = audio.astype(np.float32)
     if np.abs(audio).max() > 0:
         audio = audio / np.abs(audio).max()
-    
-    # Resample if needed
     if sr != target_sr:
-        # For simplicity, we'll just use scipy resample in a real project
         from scipy import signal
         audio = signal.resample(audio, int(len(audio) * target_sr / sr))
-    
-    # Reshape to match expected dimensions (add channel dimension)
-    audio = audio.reshape(1, -1)
-    
     return audio
 
-def extract_audio_from_video(video_path: str) -> np.ndarray:
-    """Extract audio from video file."""
-    video = VideoFileClip(video_path)
-    if video.audio is not None:
-        # Create temporary audio file
-        temp_audio = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        temp_audio_path = temp_audio.name
-        temp_audio.close()
-        
-        # Write audio to temporary file
-        video.audio.write_audiofile(temp_audio_path, verbose=False, logger=None)
-        
-        # Load audio
-        audio = load_audio(temp_audio_path)
-        
-        # Clean up
-        os.unlink(temp_audio_path)
-        return audio
-    return np.array([], dtype=np.float32)
 
-def process_mm_info(conversation: List[Dict[str, Any]], use_audio_in_video: bool = False) -> Tuple[List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
-    """
-    Process multimedia information from conversation.
-    
-    Args:
-        conversation: List of conversation messages
-        use_audio_in_video: Whether to extract audio from videos
-        
-    Returns:
-        Tuple of (audios, images, videos) as tensors
-    """
-    audios = []
-    images = []
-    videos = []
-    
-    for message in conversation:
-        if "content" in message:
-            for content in message["content"]:
-                if content["type"] == "image":
-                    image_path = content.get("image")
-                    if image_path:
-                        img = load_image(image_path)
-                        images.append(torch.tensor(img).cpu())
-                
-                elif content["type"] == "audio":
-                    audio_path = content.get("audio")
-                    if audio_path:
-                        audio = load_audio(audio_path)
-                        audios.append(torch.tensor(audio).cpu())
-                
-                elif content["type"] == "video":
-                    video_path = content.get("video")
-                    if video_path:
-                        # For video, we just store the path for now
-                        # In a real implementation, you would process the video frames
-                        videos.append(video_path)
-                        
-                        # Extract audio from video if requested
-                        if use_audio_in_video:
-                            if video_path.startswith(('http://', 'https://')):
-                                local_path = download_media(video_path)
-                                audio = extract_audio_from_video(local_path)
-                                os.unlink(local_path)  # Clean up
-                            else:
-                                audio = extract_audio_from_video(video_path)
-                            
-                            if len(audio) > 0:
-                                audios.append(torch.tensor(audio).cpu())
-    
-    # Ensure all tensors are on CPU before returning
-    audios = [tensor.cpu() if tensor.device.type != 'cpu' else tensor for tensor in audios]
-    images = [tensor.cpu() if tensor.device.type != 'cpu' else tensor for tensor in images]
-    
+def extract_audio_from_video(path: str, target_sr: int = TARGET_SR) -> np.ndarray:
+    """Extract audio track from a video – slow but reliable ffmpeg via moviepy."""
+    with VideoFileClip(path) as clip:
+        if clip.audio is None:
+            return np.array([], dtype=np.float32)
+        tmp_wav = tempfile.NamedTemporaryFile(suffix=".wav", delete=False).name
+        clip.audio.write_audiofile(tmp_wav, fps=target_sr, verbose=False, logger=None)
+    audio = load_audio(tmp_wav, target_sr)
+    os.unlink(tmp_wav)
+    return audio
+
+
+# ---------------------- CONVERSATION PARSE --------------------------------
+
+def process_mm_info(conversation: List[Dict[str, Any]], use_audio_in_video: bool = False) -> Tuple[List[np.ndarray], List[np.ndarray], List[str]]:
+    """Walk over a chat message list and collect media into python‑native types."""
+    audios: List[np.ndarray] = []
+    images: List[np.ndarray] = []
+    videos: List[str] = []
+
+    for msg in conversation:
+        for item in msg.get("content", []):
+            if item["type"] == "image":
+                images.append(load_image(item["image"]))
+
+            elif item["type"] == "audio":
+                audios.append(load_audio(item["audio"]))
+
+            elif item["type"] == "video":
+                videos.append(item["video"])
+                if use_audio_in_video:
+                    source = item["video"]
+                    if source.startswith(("http://", "https://")):
+                        local = download_media(source)
+                        audio = extract_audio_from_video(local)
+                        os.unlink(local)
+                    else:
+                        audio = extract_audio_from_video(source)
+                    if audio.size:
+                        audios.append(audio)
+
     return audios, images, videos
