@@ -76,6 +76,7 @@ def main(config_path: str):
     model = Qwen2_5OmniForConditionalGeneration.from_pretrained(
         pretrained_model_path,
         torch_dtype=dtype,
+        attn_implementation="flash_attention_2",
         device_map="auto"
     ).train()
 
