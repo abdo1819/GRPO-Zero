@@ -77,7 +77,7 @@ class MInDS14Dataset(Dataset):
         test_size: int = 100,
     ):
         # Load dataset from Hugging Face
-        self.dataset = load_dataset("PolyAI/minds14", language)
+        self.dataset = load_dataset("PolyAI/minds14", language,trust_remote_code=True)
         self.split = split
         
         # Convert to list for easier indexing
@@ -153,5 +153,5 @@ class MInDS14Dataset(Dataset):
             prefix_token_ids=prefix_token_ids,
             images=[],
             videos=[],
-            use_audio_in_video=False,
+            use_audio_in_video=True,
         )

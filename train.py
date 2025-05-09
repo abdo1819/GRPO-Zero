@@ -54,7 +54,7 @@ def main(config_path: str):
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
 
-    pretrained_model_path = Path(config["model"]["pretrained_model_path"])
+    pretrained_model_path = config["model"]["pretrained_model_path"]
     device = torch.device(config["model"]["device"])
     dtype_map = {
         "bfloat16": torch.bfloat16,

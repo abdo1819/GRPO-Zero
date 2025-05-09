@@ -71,23 +71,27 @@ def rollout(
                 videos=videos,
                 return_tensors="pt",
                 padding=True,
-                use_audio_in_video=batch.use_audio_in_video
+                use_audio_in_video=batch.use_audio_in_video,
+                device=device,
+                
             )
             
             # Move inputs to the correct device
-            inputs = {k: v.to(device).to(dtype) if isinstance(v, torch.Tensor) else v 
-                     for k, v in inputs.items()}
+            # inputs = {k: v.to(device).to(dtype) if isinstance(v, torch.Tensor) else v 
+            #          for k, v in inputs.items()}
+            device = next(model.parameters()).device        # first parameter’s device → cuda:0
+            inputs = {k: v.to(device) for k, v in inputs.items()}
             
             # Generate completion with audio support
-            with torch.autocast(device_type=device.type, dtype=dtype):
-                outputs = model.generate(
-                    **inputs,
-                    max_new_tokens=max_gen_len,
-                    do_sample=True,
-                    use_audio_in_video=batch.use_audio_in_video,
-                    return_dict_in_generate=True,
-                )
             
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_gen_len,
+                do_sample=True,
+                use_audio_in_video=batch.use_audio_in_video,
+                # return_dict_in_generate=True,
+            )
+        
             # Extract text and audio from outputs
             text_ids = outputs.sequences
             audio = outputs.audio_output
